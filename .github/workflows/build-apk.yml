@@ -20,15 +20,29 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Make Gradle executable
-        run: chmod +x gradlew
+      - name: Find Android project
+        run: |
+          echo "Searching for Android project..."
+          find . -name "settings.gradle" -o -name "settings.gradle.kts"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
 
       - name: Build APK
-        run: ./gradlew assembleDebug
+        run: |
+          PROJECT_DIR=$(dirname "$(find . -name 'settings.gradle' -o -name 'settings.gradle.kts' | head -n 1)")
+          echo "Android project found at: $PROJECT_DIR"
+          cd "$PROJECT_DIR"
+          gradle assembleDebug --no-daemon
+
+      - name: Find APK
+        run: |
+          find . -name "*.apk" -type f
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: Melon-Bag-APK
-          path: app/build/outputs/apk/debug/*.apk
-  
+          path: "**/build/outputs/apk/debug/*.apk"
