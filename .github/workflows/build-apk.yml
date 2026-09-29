@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout project
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Set up Java
@@ -20,10 +20,49 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Find Android project
+      - name: Prepare project
+        shell: bash
         run: |
-          echo "Searching for Android project..."
-          find . -name "settings.gradle" -o -name "settings.gradle.kts"
+          set -e
+
+          echo "Repository contents:"
+          find . -maxdepth 3 -type f | sort | head -200
+
+          mkdir -p android-project
+
+          # If the Android project was uploaded as a ZIP,
+          # extract it first.
+          ZIP=$(find . -maxdepth 2 -type f -name "*.zip" | head -n 1 || true)
+
+          if [ -n "$ZIP" ]; then
+            echo "Found project ZIP: $ZIP"
+            unzip -o "$ZIP" -d android-project
+          else
+            echo "No ZIP found; using repository files."
+            cp -R . android-project/
+          fi
+
+          echo "Searching for Gradle project..."
+          SETTINGS=$(find android-project -type f \( -name "settings.gradle" -o -name "settings.gradle.kts" \) | head -n 1)
+
+          if [ -z "$SETTINGS" ]; then
+            echo "ERROR: No settings.gradle found."
+            echo "Files found:"
+            find android-project -type f | sort | head -300
+            exit 1
+          fi
+
+          PROJECT_DIR=$(dirname "$SETTINGS")
+
+          echo "================================"
+          echo "ANDROID PROJECT FOUND:"
+          echo "$PROJECT_DIR"
+          echo "================================"
+
+          echo "Gradle files:"
+          find "$PROJECT_DIR" -maxdepth 2 -type f | sort
+
+          echo "$PROJECT_DIR" > project-dir.txt
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -31,18 +70,31 @@ jobs:
           gradle-version: '8.7'
 
       - name: Build APK
+        shell: bash
         run: |
-          PROJECT_DIR=$(dirname "$(find . -name 'settings.gradle' -o -name 'settings.gradle.kts' | head -n 1)")
-          echo "Android project found at: $PROJECT_DIR"
+          set -e
+
+          PROJECT_DIR=$(cat project-dir.txt)
+
           cd "$PROJECT_DIR"
+
+          echo "Building from:"
+          pwd
+
+          echo "Contents:"
+          ls -la
+
           gradle assembleDebug --no-daemon
 
       - name: Find APK
+        shell: bash
         run: |
-          find . -name "*.apk" -type f
+          echo "Searching for APK..."
+          find android-project -type f -name "*.apk" -print
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: Melon-Bag-APK
-          path: "**/build/outputs/apk/debug/*.apk"
+          path: "android-project/**/build/outputs/apk/debug/*.apk"
+          if-no-files-found: error
